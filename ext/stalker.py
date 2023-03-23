@@ -40,6 +40,17 @@ import pox.lib.revent as revent               # Event library
 import pox.lib.recoco as recoco               # Multitasking library
 from pox.lib.util import dpidToStr
 from pox.core import POXCore
+from pox.openflow import OpenFlowNexus
+
+ofp_packet_in_reason = [
+  "OFPR_TABLE_MISS", # No matching flow (table-miss flow entry).  
+  "OFPR_APPLY_ACTION", # Output to controller in apply-actions.  
+  "OFPR_INVALID_TTL", # Packet has invalid TTL  
+  "OFPR_ACTION_SET", # Output to controller in action set.  
+  "OFPR_GROUP", # Output to controller in group bucket.  
+  "OFPR_PACKET_OUT", # Output to controller in packet-out.  
+]
+
 
 # Create a logger for this component
 log = core.getLogger()
@@ -52,61 +63,56 @@ def _handle_ConnectionUp(event):
     log.info("Switch %s connected", event.connection.dpid)
 
     msg = of.ofp_flow_mod()
-    msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
-    # event.connection.send(msg)
+    # msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
     # log.info("Hubifying %s", dpidToStr(event.dpid))
   
     # Add a flow entry that sends all packets to the controller
-    # msg = of.ofp_flow_mod()
-    # msg.match = of.ofp_match()
     msg.actions.append(of.ofp_action_output(port = of.OFPP_CONTROLLER)) # always send to controller
     event.connection.send(msg)
 
 def _handle_PacketIn (event):
   packet = event.parsed
-  print("Trigger Packet in at ", event.connection)
-  # msg = of.ofp_packet_out()
-  # msg.data = event.ofp
-  # msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
-  # event.connection.send(msg)
-  # show = _show_by_default
-  # p = packet
-  # while p:
-  #   if p.__class__.__name__.lower() in _types:
-  #     if _show_by_default:
-  #       # This packet is hidden
-  #       return
-  #     else:
-  #       # This packet should be shown
-  #       show = True
-  #       break
-  #     return
-  #   if not hasattr(p, 'next'): break
-  #   p = p.next
+  print("Packet in at switch: {} \n Because {}".format(
+    event.connection, 
+    ofp_packet_in_reason[event.ofp.reason]))
+  show = _show_by_default
+  p = packet
+  while p:
+    if p.__class__.__name__.lower() in _types:
+      if _show_by_default:
+        # This packet is hidden
+        return
+      else:
+        # This packet should be shown
+        show = True
+        break
+      return
+    if not hasattr(p, 'next'): break
+    p = p.next
 
-  # if not show: return
+  if not show: return
 
-  # msg = dpidToStr(event.dpid) + ": "
-  # msg = ""
-  # if _verbose:
-  #   msg += packet.dump()
-  # else:
-  #   p = packet
-  #   while p:
-  #     if isinstance(p, bytes):
-  #       msg += "[%s bytes]" % (len(p),)
-  #       break
-  #     elif isinstance(p, str):
-  #       msg += "[%s chars]" % (len(p),)
-  #       break
-  #     msg += "[%s]" % (p.__class__.__name__,)
-  #     p = p.next
+  msg = dpidToStr(event.dpid) + ": "
+  msg = ""
+  if _verbose:
+    msg += packet.dump()
+  else:
+    p = packet
+    while p:
+      if isinstance(p, bytes):
+        msg += "[%s bytes]" % (len(p),)
+        break
+      elif isinstance(p, str):
+        msg += "[%s chars]" % (len(p),)
+        break
+      msg += "[%s]" % (p.__class__.__name__,)
+      p = p.next
 
-  # if _max_length:
-  #   if len(msg) > _max_length:
-  #     msg = msg[:_max_length-3]
-  #     msg += "..."
-  # core.getLogger("stalking:" + dpidToStr(event.dpid)).debug(msg)
+  if _max_length:
+    if len(msg) > _max_length:
+      msg = msg[:_max_length-3]
+      msg += "..."
+  core.getLogger("dump:" + dpidToStr(event.dpid)).debug(msg)
 
 
 def _go_up (event):
@@ -122,35 +128,35 @@ def launch (verbose = False, max_length = 110, full_packets = True,
   The default launcher just logs its arguments
   """
 
-  # global _verbose, _max_length, _types, _show_by_default
-  # _verbose = verbose
-  # _max_length = max_length
-  # force_show = (show is True) or (hide is False and show is False)
-  # if isinstance(hide, str):
-  #   hide = hide.replace(',', ' ').replace('|', ' ')
-  #   hide = set([p.lower() for p in hide.split()])
-  # else:
-  #   hide = set()
-  # if isinstance(show, str):
-  #   show = show.replace(',', ' ').replace('|', ' ')
-  #   show = set([p.lower() for p in show.split()])
-  # else:
-  #   show = set()
+  global _verbose, _max_length, _types, _show_by_default
+  _verbose = verbose
+  _max_length = max_length
+  force_show = (show is True) or (hide is False and show is False)
+  if isinstance(hide, str):
+    hide = hide.replace(',', ' ').replace('|', ' ')
+    hide = set([p.lower() for p in hide.split()])
+  else:
+    hide = set()
+  if isinstance(show, str):
+    show = show.replace(',', ' ').replace('|', ' ')
+    show = set([p.lower() for p in show.split()])
+  else:
+    show = set()
 
-  # if hide and show:
-  #   raise RuntimeError("Can't both show and hide packet types")
+  if hide and show:
+    raise RuntimeError("Can't both show and hide packet types")
 
-  # if show:
-  #   _types = show
-  # else:
-  #   _types = hide
-  # _show_by_default = not not hide
-  # if force_show:
-  #   _show_by_default = force_show
+  if show:
+    _types = show
+  else:
+    _types = hide
+  _show_by_default = not not hide
+  if force_show:
+    _show_by_default = force_show
 
-  # if full_packets:
-  #   # Send full packets to controller
-  #   core.openflow.miss_send_len = 0xffff
+  if full_packets:
+    # Send full packets to controller
+    core.openflow.miss_send_len = 0xffff
 
   core.addListenerByName("UpEvent", _go_up)
   core.openflow.addListenerByName("PacketIn", _handle_PacketIn)
