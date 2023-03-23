@@ -38,9 +38,75 @@ from pox.lib.addresses import EthAddr, IPAddr # Address types
 import pox.lib.util as poxutil                # Various util functions
 import pox.lib.revent as revent               # Event library
 import pox.lib.recoco as recoco               # Multitasking library
+from pox.lib.util import dpidToStr
+from pox.core import POXCore
 
 # Create a logger for this component
 log = core.getLogger()
+_verbose = None
+_max_length = None
+_types = None
+_show_by_default = None
+
+def _handle_ConnectionUp(event):
+    log.info("Switch %s connected", event.connection.dpid)
+
+    msg = of.ofp_flow_mod()
+    msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
+    # event.connection.send(msg)
+    # log.info("Hubifying %s", dpidToStr(event.dpid))
+  
+    # Add a flow entry that sends all packets to the controller
+    # msg = of.ofp_flow_mod()
+    # msg.match = of.ofp_match()
+    msg.actions.append(of.ofp_action_output(port = of.OFPP_CONTROLLER)) # always send to controller
+    event.connection.send(msg)
+
+def _handle_PacketIn (event):
+  packet = event.parsed
+  print("Trigger Packet in at ", event.connection)
+  # msg = of.ofp_packet_out()
+  # msg.data = event.ofp
+  # msg.actions.append(of.ofp_action_output(port = of.OFPP_FLOOD))
+  # event.connection.send(msg)
+  # show = _show_by_default
+  # p = packet
+  # while p:
+  #   if p.__class__.__name__.lower() in _types:
+  #     if _show_by_default:
+  #       # This packet is hidden
+  #       return
+  #     else:
+  #       # This packet should be shown
+  #       show = True
+  #       break
+  #     return
+  #   if not hasattr(p, 'next'): break
+  #   p = p.next
+
+  # if not show: return
+
+  # msg = dpidToStr(event.dpid) + ": "
+  # msg = ""
+  # if _verbose:
+  #   msg += packet.dump()
+  # else:
+  #   p = packet
+  #   while p:
+  #     if isinstance(p, bytes):
+  #       msg += "[%s bytes]" % (len(p),)
+  #       break
+  #     elif isinstance(p, str):
+  #       msg += "[%s chars]" % (len(p),)
+  #       break
+  #     msg += "[%s]" % (p.__class__.__name__,)
+  #     p = p.next
+
+  # if _max_length:
+  #   if len(msg) > _max_length:
+  #     msg = msg[:_max_length-3]
+  #     msg += "..."
+  # core.getLogger("stalking:" + dpidToStr(event.dpid)).debug(msg)
 
 
 def _go_up (event):
@@ -50,60 +116,45 @@ def _go_up (event):
 
 
 @poxutil.eval_args
-def launch (foo, bar = False):
+def launch (verbose = False, max_length = 110, full_packets = True,
+            hide = False, show = False):
   """
   The default launcher just logs its arguments
   """
-  # When your component is specified on the commandline, POX automatically
-  # calls this function.
 
-  # Add whatever parameters you want to this.  They will become
-  # commandline arguments.  You can specify default values or not.
-  # In this example, foo is required and bar is not.  You may also
-  # specify a keyword arguments catch-all (e.g., **kwargs).
+  # global _verbose, _max_length, _types, _show_by_default
+  # _verbose = verbose
+  # _max_length = max_length
+  # force_show = (show is True) or (hide is False and show is False)
+  # if isinstance(hide, str):
+  #   hide = hide.replace(',', ' ').replace('|', ' ')
+  #   hide = set([p.lower() for p in hide.split()])
+  # else:
+  #   hide = set()
+  # if isinstance(show, str):
+  #   show = show.replace(',', ' ').replace('|', ' ')
+  #   show = set([p.lower() for p in show.split()])
+  # else:
+  #   show = set()
 
-  # For example, you can execute this component as:
-  # ./pox.py skeleton --foo=3 --bar=4
+  # if hide and show:
+  #   raise RuntimeError("Can't both show and hide packet types")
 
-  # Note that arguments passed from the commandline are ordinarily
-  # always strings, and it's up to you to validate and convert them.
-  # The one exception is if a user specifies the parameter name but no
-  # value (e.g., just "--foo").  In this case, it receives the actual
-  # Python value True.
-  # The @pox.util.eval_args decorator interprets them as if they are
-  # Python literals.  Even things like --foo=[1,2,3] behave as expected.
-  # Things that don't appear to be Python literals are left as strings.
+  # if show:
+  #   _types = show
+  # else:
+  #   _types = hide
+  # _show_by_default = not not hide
+  # if force_show:
+  #   _show_by_default = force_show
 
-  # If you want to be able to invoke the component multiple times, add
-  # __INSTANCE__=None as the last parameter.  When multiply-invoked, it
-  # will be passed a tuple with the following:
-  # 1. The number of this instance (0...n-1)
-  # 2. The total number of instances for this module
-  # 3. True if this is the last instance, False otherwise
-  # The last is just a comparison between #1 and #2, but is convenient.
-
-  log.warn("Foo: %s (%s)", foo, type(foo))
-  log.warn("Bar: %s (%s)", bar, type(bar))
+  # if full_packets:
+  #   # Send full packets to controller
+  #   core.openflow.miss_send_len = 0xffff
 
   core.addListenerByName("UpEvent", _go_up)
+  core.openflow.addListenerByName("PacketIn", _handle_PacketIn)
+  core.openflow.addListenerByName("ConnectionUp", _handle_ConnectionUp)
+  # core.openflow.addListenerByName("QueueStatsReceived", _handle_PacketIn)
 
-
-def breakfast ():
-  """
-  Serves a Pythonic breakfast
-  """
-  # You can invoke other functions from the commandline too.  We call
-  # these multiple or alternative launch functions.  To execute this
-  # one, you'd do:
-  # ./pox.py skeleton:breakfast
-
-  import random
-  items = "egg,bacon,sausage,baked beans,tomato".split(',')
-  random.shuffle(items)
-  breakfast = items[:random.randint(0,len(items))]
-  breakfast += ['spam'] * random.randint(0,len(breakfast)+1)
-  random.shuffle(breakfast)
-  if len(breakfast) == 0: breakfast = ["lobster thermidor aux crevettes"]
-
-  log.warn("Breakfast is served:")
-  log.warn("%s and spam", ", ".join(breakfast))
+  log.info("Packet stalker running")
